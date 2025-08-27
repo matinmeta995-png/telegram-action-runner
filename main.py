@@ -5,7 +5,7 @@ import hashlib
 import re
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, MediaCaptionTooLongError
 import logging
 from datetime import datetime, timedelta
 import sys
@@ -16,7 +16,7 @@ API_HASH = os.environ.get('API_HASH')
 TELETHON_SESSION_STRING = os.environ.get('TELETHON_SESSION')
 SOURCE_CHANNELS_STR = os.environ.get('SOURCE_CHANNELS', '')
 SOURCE_CHANNELS = [ch.strip() for ch in SOURCE_CHANNELS_STR.split(',') if ch.strip()]
-DESTINATION_CHANNEL = os.environ.get('DESTINATION_CHANNEL') # این متغیر برای ارسال پست‌ها ضروری است
+DESTINATION_CHANNEL = os.environ.get('DESTINATION_CHANNEL')
 SCHEDULE_INTERVAL_MINUTES = int(os.environ.get('SCHEDULE_INTERVAL_MINUTES', 180))
 PUBLISHER_NAME = os.environ.get('PUBLISHER_NAME', 'DefaultPublisher')
 
@@ -86,18 +86,30 @@ async def schedule_posts_for_publishing(client):
 
     remaining_posts = []
     scheduled_posts_count = 0
+    # محدودیت کاراکتر تلگرام برای کپشن رسانه‌ها
+    MAX_CAPTION_LENGTH = 1024
+
     for index, post in enumerate(post_queue):
         try:
             post_id = post.get("post_id")
-            text = post.get("text")
+            text = post.get("text", "") # استفاده از مقدار پیش‌فرض برای جلوگیری از خطا
             media_path = post.get("media_path")
             local_media_path = media_path if media_path else None
             schedule_time = datetime.now() + timedelta(minutes=(scheduled_posts_count + 1) * SCHEDULE_INTERVAL_MINUTES)
+            
             if local_media_path and os.path.exists(local_media_path):
-                await client.send_file(DESTINATION_CHANNEL, local_media_path, caption=text, schedule=schedule_time)
+                caption_to_send = text
+                # **تغییر اصلی اینجاست: کوتاه کردن کپشن در صورت نیاز**
+                if len(text) > MAX_CAPTION_LENGTH:
+                    caption_to_send = text[:MAX_CAPTION_LENGTH - 4] + "..."
+                    logging.warning(f"Caption for post {post_id} was too long. Truncating it.")
+                
+                await client.send_file(DESTINATION_CHANNEL, local_media_path, caption=caption_to_send, schedule=schedule_time)
                 logging.info(f"Post {post_id} with media scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
                 os.remove(local_media_path)
+            
             elif text and text.strip():
+                # محدودیت پیام متنی 4096 کاراکتر است و معمولا مشکلی ایجاد نمی‌کند
                 await client.send_message(DESTINATION_CHANNEL, text, schedule=schedule_time)
                 logging.info(f"Text post {post_id} scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
             else:
@@ -106,6 +118,10 @@ async def schedule_posts_for_publishing(client):
             
             scheduled_posts_count += 1
             await asyncio.sleep(2)
+        except MediaCaptionTooLongError:
+            # این خطا به طور خاص برای کپشن طولانی است، پست را رد می‌کنیم تا در حلقه نیفتد
+            logging.error(f"Could not process post {post.get('post_id')}: Caption is definitely too long. Skipping this post permanently.")
+            # این پست را به صف باقی‌مانده اضافه نمی‌کنیم
         except FloodWaitError as e:
             logging.warning(f"Flood wait triggered. Pausing for {e.seconds}s.")
             await asyncio.sleep(e.seconds + 5)
@@ -200,7 +216,6 @@ async def main():
         if final_status == 3:
             await schedule_posts_for_publishing(client)
         elif final_status == 0:
-            # شرط بررسی ریپازیتوری دوم حذف شده و تابع جمع‌آوری مستقیما اجرا می‌شود
             await collect_new_posts(client)
         else:
             logging.info(f"Status is {final_status}. No action required. Exiting.")
