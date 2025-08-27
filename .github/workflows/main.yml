@@ -17,7 +17,6 @@ jobs:
       - name: Checkout Action Repo
         uses: actions/checkout@v4
         with:
-          # توکن را اینجا هم می‌دهیم تا بتوانیم در همین ریپازیتوری push کنیم
           token: ${{ secrets.GH_PAT }}
 
       # مرحله ۲: چک‌اوت کردن ریپازیتوری خصوصی (حاوی داده‌ها)
@@ -62,10 +61,11 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # اضافه کردن تمام فایل‌های جدید یا حذف شده در پوشه مدیا
           git add media/
           # کامیت کردن فقط در صورتی که تغییری وجود داشته باشد
           git diff-index --quiet HEAD || git commit -m "Update media files [skip ci]"
+          # قبل از پوش، آخرین تغییرات را می‌گیریم تا از تداخل جلوگیری شود
+          git pull --rebase
           git push
 
       # مرحله ۷: کامیت و پوش کردن فایل‌های وضعیت در ریپازیتوری خصوصی
