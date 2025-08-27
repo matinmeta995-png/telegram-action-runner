@@ -45,12 +45,11 @@ jobs:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           TELETHON_SESSION: ${{ secrets.TELETHON_SESSION }}
-          QUEUE_GITHUB_TOKEN: ${{ secrets.QUEUE_GITHUB_TOKEN }}
+          
+          # متغیرهای مربوط به ریپازیتوری دوم حذف شدند
           
           SOURCE_CHANNELS: ${{ vars.SOURCE_CHANNELS }}
           DESTINATION_CHANNEL: ${{ vars.DESTINATION_CHANNEL }}
-          EXPECTED_QUEUE_NAME: ${{ vars.EXPECTED_QUEUE_NAME }}
-          QUEUE_REPO: ${{ vars.QUEUE_REPO }}
           PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
           
           SCHEDULE_INTERVAL_MINUTES: '180'
