@@ -77,7 +77,7 @@ def _create_post_fingerprint(message):
     return None
 
 async def schedule_posts_for_publishing(client):
-    logging.info("--- Entering Publishing Mode (Status 3) ---")
+    logging.info("--- Entering Publishing Mode (Status 2) ---")
     post_queue = read_json_file(QUEUE_FILE_PATH, default_content=[])
     if not post_queue:
         logging.warning("Publishing triggered, but post queue is empty.")
@@ -136,7 +136,7 @@ async def schedule_posts_for_publishing(client):
         logging.info("All posts scheduled successfully. Resetting status to 0.")
         update_status(0)
     else:
-        logging.warning(f"{len(remaining_posts)} posts remain in queue. Status remains 3.")
+        logging.warning(f"{len(remaining_posts)} posts remain in queue. Status remains 2.")
 
 async def collect_new_posts(client):
     logging.info("--- Entering Collection Mode (Status 0) ---")
@@ -213,7 +213,7 @@ async def main():
     try:
         final_status = get_status()
 
-        if final_status == 3:
+        if final_status == 2: # <--- تغییر اصلی اینجاست
             await schedule_posts_for_publishing(client)
         elif final_status == 0:
             await collect_new_posts(client)
