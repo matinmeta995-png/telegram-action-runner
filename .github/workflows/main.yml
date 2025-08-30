@@ -46,8 +46,6 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           TELETHON_SESSION: ${{ secrets.TELETHON_SESSION }}
           
-          # متغیرهای مربوط به ریپازیتوری دوم حذف شدند
-          
           SOURCE_CHANNELS: ${{ vars.SOURCE_CHANNELS }}
           DESTINATION_CHANNEL: ${{ vars.DESTINATION_CHANNEL }}
           PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
@@ -75,4 +73,5 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff-index --quiet HEAD || git commit -m "Update state files"
+          git pull --rebase # <--- این خط اضافه شده است
           git push
