@@ -27,6 +27,7 @@ QUEUE_FILE_PATH = os.path.join(STATE_REPO_PATH, "post_queue.json")
 STATUS_FILE_PATH = os.path.join(STATE_REPO_PATH, "status.json")
 LAST_IDS_FILE = os.path.join(STATE_REPO_PATH, "last_ids.json")
 MEDIA_DIR = "media"
+MAX_CAPTION_LENGTH = 1024 # محدودیت کاراکتر تلگرام برای کپشن
 
 
 # --- توابع کمکی ---
@@ -69,11 +70,12 @@ def is_post_valid(message, source_channel_username):
             return False
     return True
 
-def _create_post_fingerprint(message):
-    if getattr(message, 'text', None):
-        return hashlib.md5(message.text.strip()[:250].encode()).hexdigest()
-    if getattr(message, 'file', None):
-        return f"{message.file.size}-{message.file.name or ''}"
+# <--- بهبود: این تابع حالا پیام اصلی گروه را برای ساخت اثرانگشت دریافت می‌کند
+def _create_post_fingerprint(main_message):
+    if getattr(main_message, 'text', None):
+        return hashlib.md5(main_message.text.strip()[:250].encode()).hexdigest()
+    if getattr(main_message, 'file', None):
+        return f"{main_message.file.size}-{main_message.file.name or ''}"
     return None
 
 async def schedule_posts_for_publishing(client):
@@ -86,42 +88,55 @@ async def schedule_posts_for_publishing(client):
 
     remaining_posts = []
     scheduled_posts_count = 0
-    # محدودیت کاراکتر تلگرام برای کپشن رسانه‌ها
-    MAX_CAPTION_LENGTH = 1024
 
     for index, post in enumerate(post_queue):
         try:
             post_id = post.get("post_id")
-            text = post.get("text", "") # استفاده از مقدار پیش‌فرض برای جلوگیری از خطا
+            text = post.get("text", "")
             media_path = post.get("media_path")
-            local_media_path = media_path if media_path else None
             schedule_time = datetime.now() + timedelta(minutes=(scheduled_posts_count + 1) * SCHEDULE_INTERVAL_MINUTES)
-            
-            if local_media_path and os.path.exists(local_media_path):
+
+            # <--- تغییر کلیدی: بررسی می‌کند که آیا media_path یک لیست است (برای آلبوم) یا یک رشته
+            if media_path:
                 caption_to_send = text
-                # **تغییر اصلی اینجاست: کوتاه کردن کپشن در صورت نیاز**
                 if len(text) > MAX_CAPTION_LENGTH:
                     caption_to_send = text[:MAX_CAPTION_LENGTH - 4] + "..."
                     logging.warning(f"Caption for post {post_id} was too long. Truncating it.")
-                
-                await client.send_file(DESTINATION_CHANNEL, local_media_path, caption=caption_to_send, schedule=schedule_time)
-                logging.info(f"Post {post_id} with media scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
-                os.remove(local_media_path)
-            
+
+                # بررسی می‌کنیم که آیا مسیرهای رسانه وجود دارند
+                if isinstance(media_path, list):
+                    valid_media_paths = [p for p in media_path if os.path.exists(p)]
+                elif isinstance(media_path, str):
+                    valid_media_paths = [media_path] if os.path.exists(media_path) else []
+                else:
+                    valid_media_paths = []
+
+                if valid_media_paths:
+                    await client.send_file(DESTINATION_CHANNEL, valid_media_paths, caption=caption_to_send, schedule=schedule_time)
+                    logging.info(f"Post {post_id} with {len(valid_media_paths)} media file(s) scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
+                    # حذف تمام فایل‌های رسانه‌ای پس از زمان‌بندی
+                    for p in valid_media_paths:
+                        os.remove(p)
+                else:
+                     logging.warning(f"Media for post {post_id} not found. Skipping media part.")
+                     # اگر متنی وجود داشت، آن را به تنهایی ارسال کن
+                     if text and text.strip():
+                        await client.send_message(DESTINATION_CHANNEL, text, schedule=schedule_time)
+                        logging.info(f"Text part of post {post_id} scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
+                     else:
+                        continue # اگر نه رسانه بود و نه متن، از این پست بگذر
+
             elif text and text.strip():
-                # محدودیت پیام متنی 4096 کاراکتر است و معمولا مشکلی ایجاد نمی‌کند
                 await client.send_message(DESTINATION_CHANNEL, text, schedule=schedule_time)
                 logging.info(f"Text post {post_id} scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
             else:
                 logging.warning(f"Post {post_id} has no valid text or media. Skipping.")
                 continue
-            
+
             scheduled_posts_count += 1
             await asyncio.sleep(2)
         except MediaCaptionTooLongError:
-            # این خطا به طور خاص برای کپشن طولانی است، پست را رد می‌کنیم تا در حلقه نیفتد
             logging.error(f"Could not process post {post.get('post_id')}: Caption is definitely too long. Skipping this post permanently.")
-            # این پست را به صف باقی‌مانده اضافه نمی‌کنیم
         except FloodWaitError as e:
             logging.warning(f"Flood wait triggered. Pausing for {e.seconds}s.")
             await asyncio.sleep(e.seconds + 5)
@@ -149,45 +164,63 @@ async def collect_new_posts(client):
         try:
             last_message_id = last_ids.get(channel, 0)
             logging.info(f"Checking {channel} since ID: {last_message_id}...")
-            messages = await client.get_messages(channel, min_id=last_message_id, limit=100)
+            # <--- بهبود: محدودیت را افزایش می‌دهیم تا پست‌های گروهی بزرگ را از دست ندهیم
+            messages = await client.get_messages(channel, min_id=last_message_id, limit=200)
             new_messages = [m for m in messages if m.id > last_message_id]
 
             if new_messages:
                 grouped_messages = {}
                 for msg in new_messages:
-                    if msg.grouped_id:
-                        if msg.grouped_id not in grouped_messages: grouped_messages[msg.grouped_id] = []
-                        grouped_messages[msg.grouped_id].append(msg)
-                    else:
-                        grouped_messages[msg.id] = [msg]
+                    group_key = msg.grouped_id if msg.grouped_id else msg.id
+                    if group_key not in grouped_messages:
+                        grouped_messages[group_key] = []
+                    grouped_messages[group_key].append(msg)
 
                 for group_id, message_group in grouped_messages.items():
-                    message = message_group[0]
-                    if not is_post_valid(message, channel): continue
+                    # <--- تغییر اصلی: پیدا کردن پیام اصلی (که متن دارد) و متن کپشن
+                    main_message = next((msg for msg in message_group if msg.text), message_group[0])
+                    caption_text = main_message.text or ""
                     
-                    fingerprint = _create_post_fingerprint(message)
+                    if not is_post_valid(main_message, channel): continue
+                    
+                    fingerprint = _create_post_fingerprint(main_message)
                     if fingerprint and fingerprint in existing_fingerprints: continue
 
-                    media_path_in_repo = None
-                    caption_text = message.text or ""
+                    # <--- تغییر اصلی: دانلود تمام رسانه‌های گروه و ذخیره مسیر آنها در یک لیست
+                    media_paths_in_repo = []
+                    for msg in message_group:
+                        if msg.media:
+                            try:
+                                downloaded_path = await msg.download_media(file=MEDIA_DIR)
+                                if downloaded_path:
+                                    media_paths_in_repo.append(os.path.relpath(downloaded_path, '.'))
+                            except Exception as dl_error:
+                                logging.error(f"Could not download media for message {msg.id} in group {group_id}: {dl_error}")
 
-                    if message.media:
-                        downloaded_path = await message.download_media(file=MEDIA_DIR)
-                        media_path_in_repo = os.path.relpath(downloaded_path, '.')
+                    # اگر هیچ رسانه‌ای دانلود نشد و متنی هم وجود نداشت، از این گروه بگذر
+                    if not media_paths_in_repo and not caption_text.strip():
+                        continue
                     
-                    if not media_path_in_repo and not caption_text.strip(): continue
+                    # <--- تغییر اصلی: اگر فقط یک رسانه وجود دارد، رشته ذخیره کن، در غیر این صورت لیست
+                    final_media_path = None
+                    if len(media_paths_in_repo) == 1:
+                        final_media_path = media_paths_in_repo[0]
+                    elif len(media_paths_in_repo) > 1:
+                        final_media_path = media_paths_in_repo
+
 
                     post_queue.append({
-                        "post_id": message.id,
+                        "post_id": main_message.id,
                         "text": caption_text,
-                        "media_path": media_path_in_repo,
+                        "media_path": final_media_path, # <--- اینجا حالا می‌تواند لیست یا رشته باشد
                         "fingerprint": fingerprint
                     })
                     total_new_posts_count += 1
                 
-                last_ids[channel] = max(m.id for m in new_messages)
+                if grouped_messages:
+                    last_ids[channel] = max(m.id for m in new_messages)
         except Exception as e:
-            logging.error(f"Error processing channel {channel}: {e}")
+            logging.error(f"Error processing channel {channel}: {e}", exc_info=True)
 
     if total_new_posts_count > 0:
         logging.info(f"Collected {total_new_posts_count} new posts.")
@@ -213,7 +246,7 @@ async def main():
     try:
         final_status = get_status()
 
-        if final_status == 2: # <--- تغییر اصلی اینجاست
+        if final_status == 2:
             await schedule_posts_for_publishing(client)
         elif final_status == 0:
             await collect_new_posts(client)
