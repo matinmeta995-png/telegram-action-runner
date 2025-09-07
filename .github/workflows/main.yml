@@ -8,6 +8,12 @@ on:
     # هر ۱۵ دقیقه یک بار اجرا می‌شود
     - cron: '*/15 * * * *'
 
+# --- تغییر اصلی اینجا اضافه شده است ---
+# این بخش تضمین می‌کند که در هر لحظه فقط یک نمونه از این workflow اجرا شود
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   run-telegram-script:
     runs-on: ubuntu-latest
@@ -50,7 +56,6 @@ jobs:
           DESTINATION_CHANNEL: ${{ vars.DESTINATION_CHANNEL }}
           PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
           
-          # --- تغییر اصلی اینجا اتفاق افتاده است ---
           # این خط حالا مقدار را از متغیر ریپازیتوری می‌خواند
           SCHEDULE_INTERVAL_MINUTES: ${{ vars.SCHEDULE_INTERVAL_MINUTES }}
         run: python main.py
@@ -77,3 +82,4 @@ jobs:
           git diff-index --quiet HEAD || git commit -m "Update state files"
           git pull --rebase # <--- این خط اضافه شده است
           git push
+
