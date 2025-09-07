@@ -17,6 +17,7 @@ TELETHON_SESSION_STRING = os.environ.get('TELETHON_SESSION')
 SOURCE_CHANNELS_STR = os.environ.get('SOURCE_CHANNELS', '')
 SOURCE_CHANNELS = [ch.strip() for ch in SOURCE_CHANNELS_STR.split(',') if ch.strip()]
 DESTINATION_CHANNEL = os.environ.get('DESTINATION_CHANNEL')
+# --- این خط مقدار را از متغیر محیطی می‌خواند و اگر وجود نداشت، پیش‌فرض را ۱۸۰ قرار می‌دهد ---
 SCHEDULE_INTERVAL_MINUTES = int(os.environ.get('SCHEDULE_INTERVAL_MINUTES', 180))
 PUBLISHER_NAME = os.environ.get('PUBLISHER_NAME', 'DefaultPublisher')
 
@@ -118,12 +119,12 @@ async def schedule_posts_for_publishing(client):
                     for p in valid_media_paths:
                         os.remove(p)
                 else:
-                     logging.warning(f"Media for post {post_id} not found. Skipping media part.")
-                     # اگر متنی وجود داشت، آن را به تنهایی ارسال کن
-                     if text and text.strip():
+                    logging.warning(f"Media for post {post_id} not found. Skipping media part.")
+                    # اگر متنی وجود داشت، آن را به تنهایی ارسال کن
+                    if text and text.strip():
                         await client.send_message(DESTINATION_CHANNEL, text, schedule=schedule_time)
                         logging.info(f"Text part of post {post_id} scheduled for {schedule_time.strftime('%Y-%m-%d %H:%M')}")
-                     else:
+                    else:
                         continue # اگر نه رسانه بود و نه متن، از این پست بگذر
 
             elif text and text.strip():
