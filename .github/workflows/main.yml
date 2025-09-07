@@ -50,7 +50,9 @@ jobs:
           DESTINATION_CHANNEL: ${{ vars.DESTINATION_CHANNEL }}
           PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
           
-          SCHEDULE_INTERVAL_MINUTES: '180'
+          # --- تغییر اصلی اینجا اتفاق افتاده است ---
+          # این خط حالا مقدار را از متغیر ریپازیتوری می‌خواند
+          SCHEDULE_INTERVAL_MINUTES: ${{ vars.SCHEDULE_INTERVAL_MINUTES }}
         run: python main.py
 
       # مرحله ۶: کامیت و پوش کردن فایل‌های رسانه‌ای در ریپازیتوری عمومی
