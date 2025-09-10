@@ -8,7 +8,6 @@ on:
     # هر ۱۵ دقیقه یک بار اجرا می‌شود
     - cron: '*/15 * * * *'
 
-# --- تغییر اصلی اینجا اضافه شده است ---
 # این بخش تضمین می‌کند که در هر لحظه فقط یک نمونه از این workflow اجرا شود
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -56,8 +55,12 @@ jobs:
           DESTINATION_CHANNEL: ${{ vars.DESTINATION_CHANNEL }}
           PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
           
-          # این خط حالا مقدار را از متغیر ریپازیتوری می‌خواند
           SCHEDULE_INTERVAL_MINUTES: ${{ vars.SCHEDULE_INTERVAL_MINUTES }}
+          
+          # --- جدید: متغیر جدید برای تعیین زمان انقضا ---
+          # این مقدار را می‌توانید در بخش Variables ریپازیتوری خود تنظیم کنید.
+          # اگر تنظیم نشود، اسکریپت از مقدار پیش‌فرض (۴ ساعت) استفاده خواهد کرد.
+          STATUS_TIMEOUT_HOURS: ${{ vars.STATUS_TIMEOUT_HOURS }}
         run: python main.py
 
       # مرحله ۶: کامیت و پوش کردن فایل‌های رسانه‌ای در ریپازیتوری عمومی
@@ -80,6 +83,5 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff-index --quiet HEAD || git commit -m "Update state files"
-          git pull --rebase # <--- این خط اضافه شده است
+          git pull --rebase
           git push
-
